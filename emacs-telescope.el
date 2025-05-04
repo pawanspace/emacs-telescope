@@ -22,6 +22,7 @@
 
 (require 'project)
 (require 'cl-lib)
+(require 'emacs-telescope-grep)
 
 (defgroup emacs-telescope nil
   "Fuzzy finder with preview capabilities for Emacs."
@@ -283,18 +284,8 @@
     (emacs-telescope--update-selection)))
 
 ;;;###autoload
-(defun emacs-telescope-grep ()
-  "Grep in project using telescope."
-  (interactive)
-  (let* ((project-root (project-root (project-current t)))
-         (default-directory project-root)
-         (query (read-string "Grep for: "))
-         (grep-cmd (format "grep -r \"%s\" --include=\"*.el\" --include=\"*.py\" --include=\"*.js\" . 2>/dev/null" query))
-         (results (split-string (shell-command-to-string grep-cmd) "\n" t)))
-    (setq emacs-telescope--results results)
-    (setq emacs-telescope--current-selection 0)
-    (emacs-telescope--create-ui)
-    (emacs-telescope--update-selection)))
+;; Grep functionality is now in emacs-telescope-grep.el
+(declare-function emacs-telescope-grep "emacs-telescope-grep")
 
 (provide 'emacs-telescope)
 ;;; emacs-telescope.el ends here
