@@ -1,11 +1,5 @@
 ;;; emacs-telescope-sources.el --- Sources for emacs-telescope -*- lexical-binding: t -*-
 
-;; Copyright (C) 2025 Your Name
-
-;; Author: Your Name <your.email@example.com>
-;; Keywords: convenience, files, matching
-;; URL: https://github.com/yourusername/emacs-telescope
-
 ;;; Commentary:
 
 ;; This file provides various sources for emacs-telescope.
@@ -28,7 +22,7 @@
 (defun emacs-telescope--should-exclude-file-p (file)
   "Return non-nil if FILE should be excluded from results."
   (let ((relative-file (file-relative-name file)))
-    (or 
+    (or
      ;; Exclude dot files if configured
      (and emacs-telescope-exclude-dot-files
           (string-match-p "/\\.[^/]+" (concat "/" relative-file)))
@@ -62,11 +56,8 @@
 
 (defun emacs-telescope-source-grep (query)
   "Source for grep results with QUERY."
-  (let* ((project-root (project-root (project-current t)))
-         (default-directory project-root)
-         (grep-cmd (format "grep -r \"%s\" --include=\"*.el\" --include=\"*.py\" --include=\"*.js\" ." query))
-         (results (split-string (shell-command-to-string grep-cmd) "\n" t)))
-    results))
+  (require 'emacs-telescope-grep)
+  (emacs-telescope-grep-get-results query))
 
 (defun emacs-telescope-source-git-files ()
   "Source for git files in the current project."
