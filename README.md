@@ -8,6 +8,7 @@ A fuzzy finder with preview capabilities for Emacs, inspired by [telescope.nvim]
 - Live preview of selected items
 - Project-aware searching
 - Customizable UI
+- Modular architecture for easy extension
 
 ## Installation
 
@@ -73,3 +74,85 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Acknowledgments
 
 - Inspired by [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
+## Project Structure
+
+The project is organized into several modules with clear separation of concerns:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      emacs-telescope.el                         │
+│                                                                 │
+│  - Core functionality                                           │
+│  - Main entry points                                            │
+│  - UI management                                                │
+│  - Result filtering and selection                               │
+└───────────────────┬─────────────────┬───────────────────────────┘
+                    │                 │
+                    ▼                 ▼
+┌─────────────────────────┐  ┌─────────────────────────────────────┐
+│ emacs-telescope-grep.el │  │           src/ directory            │
+│                         │  │                                     │
+│ - Specialized grep      │  │  ┌───────────────────────────────┐  │
+│   functionality         │  │  │  emacs-telescope-ui.el        │  │
+│ - Project-wide text     │  │  │  - Window layout creation     │  │
+│   search                │  │  │  - Buffer setup and styling   │  │
+└─────────────────────────┘  │  │  - Display updating           │  │
+                             │  └───────────────────────────────┘  │
+                             │                                     │
+                             │  ┌───────────────────────────────┐  │
+                             │  │  emacs-telescope-actions.el   │  │
+                             │  │  - File opening               │  │
+                             │  │  - Buffer switching           │  │
+                             │  │  - Grep result navigation     │  │
+                             │  │  - Command execution          │  │
+                             │  └───────────────────────────────┘  │
+                             │                                     │
+                             │  ┌───────────────────────────────┐  │
+                             │  │  emacs-telescope-sources.el   │  │
+                             │  │  - Project files              │  │
+                             │  │  - Open buffers               │  │
+                             │  │  - Recent files               │  │
+                             │  │  - Grep results               │  │
+                             │  │  - Git files and status       │  │
+                             │  └───────────────────────────────┘  │
+                             └─────────────────────────────────────┘
+```
+
+### Component Relationships
+
+1. **Core Module (`emacs-telescope.el`)**
+   - Acts as the main entry point for the package
+   - Provides the primary user-facing commands
+   - Coordinates between UI, actions, and sources
+   - Handles user input and selection
+
+2. **Grep Module (`emacs-telescope-grep.el`)**
+   - Specialized implementation for text searching
+   - Integrates with the core module through function declarations
+   - Provides comprehensive file type support for searching
+
+3. **UI Module (`emacs-telescope-ui.el`)**
+   - Manages the three-window layout (input, results, preview)
+   - Handles buffer setup and styling
+   - Updates the display as selections change
+   - Provides customization options for appearance
+
+4. **Actions Module (`emacs-telescope-actions.el`)**
+   - Defines what happens when items are selected
+   - Includes actions for different types of items (files, buffers, grep results)
+   - Provides specialized navigation for grep results
+
+5. **Sources Module (`emacs-telescope-sources.el`)**
+   - Provides data for the telescope to search
+   - Implements filtering for file exclusions
+   - Supports various data sources (files, buffers, commands)
+   - Integrates with project.el for project-aware searching
+
+### Data Flow
+
+1. User invokes a telescope command (find-files, buffers, grep)
+2. Core module creates the UI using the UI module
+3. Core module gets data from the appropriate source
+4. User filters results by typing in the input buffer
+5. Core module updates the selection and preview
+6. When user selects an item, the appropriate action is executed
