@@ -12,8 +12,9 @@
 
 ;;; Code:
 
-(require 'popup)
-(require 'dash)
+;; Comment out these requires for now since they're causing compilation issues
+;; (require 'popup)
+;; (require 'dash)
 
 (defcustom emacs-telescope-ui-border-char ?│
   "Character used for vertical borders."

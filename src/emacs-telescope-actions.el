@@ -38,7 +38,8 @@
 (defun emacs-telescope-action-git-status-file (status-line)
   "Handle git STATUS-LINE."
   (when (string-match "\\(.\\).\\s-+\\(.*\\)" status-line)
-    (let ((status (match-string 1 status-line))
+    (let (;; Unused variable commented out to avoid warning
+          ;; (status (match-string 1 status-line))
           (file (match-string 2 status-line)))
       (find-file file))))
 

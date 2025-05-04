@@ -229,7 +229,7 @@
                      (insert-buffer-substring (get-buffer selected)))
                     
                     ;; Default
-                    (t (insert "No preview available"))))))))))
+                    (t (insert "No preview available")))))))))))
 
 (defun emacs-telescope-select-item ()
   "Select the current item."

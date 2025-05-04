@@ -1,5 +1,11 @@
 ;;; emacs-telescope-sources.el --- Sources for emacs-telescope -*- lexical-binding: t -*-
 
+;; Copyright (C) 2025 Your Name
+
+;; Author: Your Name <your.email@example.com>
+;; Keywords: convenience, files, matching
+;; URL: https://github.com/yourusername/emacs-telescope
+
 ;;; Commentary:
 
 ;; This file provides various sources for emacs-telescope.
@@ -7,7 +13,8 @@
 ;;; Code:
 
 (require 'project)
-(require 'dash)
+;; Comment out dash requirement for now
+;; (require 'dash)
 
 (defcustom emacs-telescope-exclude-dot-files t
   "Whether to exclude dot files (hidden files) from file search results."
@@ -22,7 +29,7 @@
 (defun emacs-telescope--should-exclude-file-p (file)
   "Return non-nil if FILE should be excluded from results."
   (let ((relative-file (file-relative-name file)))
-    (or
+    (or 
      ;; Exclude dot files if configured
      (and emacs-telescope-exclude-dot-files
           (string-match-p "/\\.[^/]+" (concat "/" relative-file)))
@@ -37,16 +44,16 @@
          (default-directory project-root)
          (all-files (directory-files-recursively project-root ".*" nil)))
     ;; Filter out excluded files
-    (-remove #'emacs-telescope--should-exclude-file-p all-files)))
+    (seq-filter (lambda (f) (not (emacs-telescope--should-exclude-file-p f))) all-files)))
 
 (defun emacs-telescope-source-buffers ()
   "Source for finding open buffers."
   (let ((buffers (buffer-list)))
-    (-filter (lambda (buf)
-               (let ((name (buffer-name buf)))
-                 (and (not (string-prefix-p " " name))
-                      (not (string-prefix-p "*" name)))))
-             buffers)))
+    (seq-filter (lambda (buf)
+                  (let ((name (buffer-name buf)))
+                    (and (not (string-prefix-p " " name))
+                         (not (string-prefix-p "*" name)))))
+                buffers)))
 
 (defun emacs-telescope-source-recent-files ()
   "Source for finding recently opened files."
