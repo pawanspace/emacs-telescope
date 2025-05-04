@@ -23,6 +23,7 @@
 (require 'project)
 (require 'cl-lib)
 (require 'emacs-telescope-grep)
+(require 'emacs-telescope-ui)
 
 (defgroup emacs-telescope nil
   "Fuzzy finder with preview capabilities for Emacs."
@@ -146,17 +147,35 @@
     (emacs-telescope--update-selection)))
 
 (defun emacs-telescope--update-selection ()
-  "Update the selection in the results buffer."
-  (with-current-buffer emacs-telescope--results-buffer
-    (let ((inhibit-read-only t))
-      (erase-buffer)
-      (dotimes (i (length emacs-telescope--results))
-        (let ((item (nth i emacs-telescope--results)))
-          (if (= i emacs-telescope--current-selection)
-              (insert (propertize (format "> %s\n" item) 'face 'highlight))
-            (insert (format "  %s\n" item)))))
-      (emacs-telescope--update-preview))))
+  "Update the selection in the results buffer and trigger preview."
+  (when (and emacs-telescope--results-buffer (buffer-live-p emacs-telescope--results-buffer))
+    (with-current-buffer emacs-telescope--results-buffer
+      (let ((inhibit-read-only t)
+            (buffer-read-only nil)) ; Ensure buffer is writable
+        (erase-buffer)
+        ;; Check if results exist before processing
+        (if (null emacs-telescope--results)
+            (insert "No results available.")
+          (dotimes (i (length emacs-telescope--results))
+            (let ((item (nth i emacs-telescope--results)))
+              (if (= i emacs-telescope--current-selection)
+                  ;; Use the face defined in the UI module
+                  (insert (propertize (format "> %s\n" item) 'face emacs-telescope-ui-selection-face))
+                (insert (format "  %s\n" item))))))
+        ;; Make buffer read-only again after modification
+        (setq buffer-read-only t)))
 
+    ;; Trigger preview update *after* results buffer is updated
+    ;; Check if selection is valid before getting item
+    (when (and emacs-telescope--results
+               (>= emacs-telescope--current-selection 0)
+               (< emacs-telescope--current-selection (length emacs-telescope--results)))
+      (let ((selected-item (nth emacs-telescope--current-selection emacs-telescope--results)))
+        ;; Call the correct UI function with the selected item
+        (emacs-telescope--update-preview)))))
+
+
+;; Add this function definition back into emacs-telescope.el
 (defun emacs-telescope--update-preview ()
   "Update the preview based on current selection."
   (when emacs-telescope--preview-timer
@@ -165,71 +184,135 @@
   (setq emacs-telescope--preview-timer
         (run-with-timer
          emacs-telescope-preview-delay nil
+         ;; Lambda function to perform the preview update
          (lambda ()
+           ;; Ensure results exist and selection is valid
            (when (and emacs-telescope--results
-                     (>= emacs-telescope--current-selection 0)
-                     (< emacs-telescope--current-selection (length emacs-telescope--results)))
-             (let ((selected (nth emacs-telescope--current-selection emacs-telescope--results)))
-               (with-current-buffer emacs-telescope--preview-buffer
-                 (let ((inhibit-read-only t)
-                       (buffer-read-only nil))
-                   (erase-buffer)
-                   (cond
-                    ;; Grep result preview
-                    ((string-match "\\(.*\\):\\([0-9]+\\):" selected)
-                     (let ((file (match-string 1 selected))
-                           (line (string-to-number (match-string 2 selected)))
-                           (content (if (string-match ":[0-9]+:\\(.*\\)$" selected)
-                                       (match-string 1 selected)
-                                     nil)))
-                       (if (and (file-exists-p file)
-                                (file-readable-p file))
-                           (progn
-                             (insert-file-contents file nil nil nil t)
-                             (let ((mode (assoc-default file auto-mode-alist 'string-match)))
-                               (when mode 
-                                 (with-demoted-errors "Error setting mode: %S"
-                                   (funcall mode))))
-                             ;; Highlight the matching line
-                             (goto-char (point-min))
-                             (forward-line (1- line))
-                             (let ((start (line-beginning-position))
-                                   (end (line-end-position)))
-                               (put-text-property start end 'face 'highlight)
-                               ;; Add context - show a few lines before and after
-                               (let ((context-start (max (point-min) 
-                                                        (save-excursion 
-                                                          (goto-char start)
-                                                          (forward-line -3)
-                                                          (point))))
-                                     (context-end (min (point-max)
-                                                      (save-excursion
-                                                        (goto-char end)
-                                                        (forward-line 3)
-                                                        (point)))))
-                                 ;; Use a temporary narrowing for display purposes
-                                 (narrow-to-region context-start context-end))))
-                         (insert (format "File not found or not readable: %s\n\n" file))
-                         (when content
-                           (insert (format "Matched content: %s" content))))))
-                    
-                    ;; File preview
-                    ((and (stringp selected) (file-exists-p selected))
-                     (if (file-readable-p selected)
-                         (progn
-                           (insert-file-contents selected nil nil nil t)
-                           (let ((mode (assoc-default selected auto-mode-alist 'string-match)))
-                             (when mode 
-                               (with-demoted-errors "Error setting mode: %S"
-                                 (funcall mode)))))
-                       (insert (format "File not readable: %s" selected))))
-                    
-                    ;; Buffer preview
-                    ((and (stringp selected) (get-buffer selected))
-                     (insert-buffer-substring (get-buffer selected)))
-                    
-                    ;; Default
-                    (t (insert "No preview available")))))))))))
+                      (>= emacs-telescope--current-selection 0)
+                      (< emacs-telescope--current-selection (length emacs-telescope--results)))
+             (let ((selected (nth emacs-telescope--current-selection emacs-telescope--results))
+                   ;; Get project root once for potential use
+                   (project-root (project-root (project-current t))))
+               (when (and emacs-telescope--preview-buffer (buffer-live-p emacs-telescope--preview-buffer))
+                 (with-current-buffer emacs-telescope--preview-buffer
+                   (let ((inhibit-read-only t) ;; Allow modification
+                         (buffer-read-only nil)) ;; Ensure buffer isn't read-only
+                     (erase-buffer) ;; Clear previous preview
+                     (condition-case err ; Basic error handling
+                         (cond
+                          ;; Case 1: Grep result preview (format: file:line:content)
+                          ((string-match "\\(.+?\\):\\([0-9]+\\):\\(.*\\)" selected) ; Use non-greedy match for file
+                           (let* ((relative-file (match-string 1 selected))
+                                  ;; Construct absolute path relative to project root if project-root is valid
+                                  (file (if project-root
+                                            (expand-file-name relative-file project-root)
+                                          relative-file)) ; Fallback if not in project
+                                  (line (string-to-number (match-string 2 selected)))
+                                  (content (match-string 3 selected))) ; Content is the rest
+                             (if (and (file-exists-p file) (file-readable-p file))
+                                 (progn
+                                   ;; Insert file contents without markers
+                                   (insert-file-contents file nil nil nil t)
+                                   ;; Attempt to set the correct major mode
+                                   (let ((mode (or (derived-mode-p 'prog-mode)
+                                                   (assoc-default file auto-mode-alist 'string-match))))
+                                     (when mode
+                                       (with-demoted-errors "Error setting mode: %S"
+                                         (funcall mode))))
+                                   ;; Go to the target line and highlight it
+                                   (goto-char (point-min))
+                                   (forward-line (1- line))
+                                   (let ((start (line-beginning-position))
+                                         (end (line-end-position)))
+                                     (put-text-property start end 'face emacs-telescope) ; Simple highlight face
+                                     (recenter (/ (window-height) 2)))) ; Center view
+                               ;; Handle file not found/readable
+                               (insert (format "File not found or not readable: %s\n\nMatched content:\n%s"
+                                               file content)))))
+
+                          ;; Case 2: File preview (could be relative or absolute)
+                          ((and (stringp selected)
+                                (let ((file-to-check (if project-root
+                                                         (expand-file-name selected project-root)
+                                                       selected)))
+                                  (file-exists-p file-to-check)))
+                           (let* ((file-to-check (if project-root
+                                                     (expand-file-name selected project-root)
+                                                   selected))
+                                  (file file-to-check)) ; Use the potentially expanded path
+                             (if (file-readable-p file)
+                                 (progn
+                                   (insert-file-contents file nil nil nil t)
+                                   ;; Attempt to set the correct major mode
+                                   (let ((mode (or (derived-mode-p 'prog-mode)
+                                                   (assoc-default file auto-mode-alist 'string-match))))
+                                     (when mode
+                                       (with-demoted-errors "Error setting mode: %S"
+                                         (funcall mode))))
+                                   (goto-char (point-min)) ; Go to start of file
+                                   (recenter 0)) ; Show top of file
+                               (insert (format "File not readable: %s" file)))))
+
+                          ;; Case 3: Buffer preview
+                          ((and (stringp selected) (get-buffer selected))
+                           (let ((buffer (get-buffer selected)))
+                             (with-current-buffer buffer
+                               ;; Insert buffer content into preview
+                               (insert-buffer-substring buffer)
+                               ;; Try to set the mode based on the original buffer's mode
+                               (when major-mode
+                                 (with-current-buffer emacs-telescope--preview-buffer
+                                   (with-demoted-errors "Error setting mode: %S"
+                                     (funcall major-mode))))))
+                           (goto-char (point-min))
+                           (recenter 0))
+
+                          ;; Default Case: No preview available
+                          (t (insert (format "No preview available for: %s" selected))))
+                       ;; Catch errors during preview generation
+                       (error (insert (format "Error generating preview for %s:\n%s" selected err)))))))))))))
+
+
+(defun emacs-telescope-select-item ()
+  "Select the current item."
+  (interactive)
+  (when (and emacs-telescope--results
+             (>= emacs-telescope--current-selection 0)
+             (< emacs-telescope--current-selection (length emacs-telescope--results)))
+    (let ((selected (nth emacs-telescope--current-selection emacs-telescope--results))
+          ;; Get project root for potential use in grep/file cases
+          (project-root (project-root (project-current t))))
+      (emacs-telescope-quit) ; Quit UI first
+      (cond
+       ;; Grep result (file:line:content)
+       ((string-match "\(.+?\):\([0-9]+\):.*" selected) ; Use non-greedy regex matching preview
+        (let* ((relative-file (match-string 1 selected))
+               (line (string-to-number (match-string 2 selected)))
+               ;; Construct absolute path relative to project root
+               (file (expand-file-name relative-file project-root)))
+          (when (file-exists-p file) ; Check existence of absolute path
+            (find-file file)
+            (goto-char (point-min))
+            (forward-line (1- line))
+            (recenter)))) ; Optional: recenter after jumping
+
+       ;; File selection (assuming relative path from project root)
+       ((and (stringp selected) project-root ; Ensure project-root is valid
+             (let ((file (expand-file-name selected project-root))) ; Construct absolute path
+               (file-exists-p file))) ; Check existence
+        (find-file (expand-file-name selected project-root))) ; Open absolute path
+
+       ;; Buffer selection
+       ((and (stringp selected) (get-buffer selected))
+        (switch-to-buffer (get-buffer selected)))
+
+       ;; Fallback: If it's a string but not matched above, maybe try opening as file?
+       ;; This handles cases where find-files might return absolute paths if not in a project.
+       ((and (stringp selected) (file-exists-p selected))
+        (find-file selected))
+
+       (t (message "Don't know how to open: %s" selected))
+       ))))
 
 (defun emacs-telescope-select-item ()
   "Select the current item."
@@ -249,11 +332,11 @@
             (goto-char (point-min))
             (forward-line (1- line))
             (recenter))))
-       
+
        ;; File selection
        ((and (stringp selected) (file-exists-p selected))
         (find-file selected))
-       
+
        ;; Buffer selection
        ((and (stringp selected) (get-buffer selected))
         (switch-to-buffer (get-buffer selected)))))))
@@ -263,16 +346,16 @@
   (interactive)
   (when emacs-telescope--preview-timer
     (cancel-timer emacs-telescope--preview-timer))
-  
+
   (when (buffer-live-p emacs-telescope--buffer)
     (kill-buffer emacs-telescope--buffer))
-  
+
   (when (buffer-live-p emacs-telescope--results-buffer)
     (kill-buffer emacs-telescope--results-buffer))
-  
+
   (when (buffer-live-p emacs-telescope--preview-buffer)
     (kill-buffer emacs-telescope--preview-buffer))
-  
+
   (delete-other-windows))
 
 (defun emacs-telescope--filter-results (query items)

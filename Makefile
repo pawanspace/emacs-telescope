@@ -9,7 +9,7 @@ TESTS := $(wildcard tests/*.el)
 all: compile
 
 compile:
-	$(BATCH) -L . -f batch-byte-compile $(SRCS)
+	$(BATCH) -L . -L src -f batch-byte-compile $(SRCS)
 
 test:
 	$(BATCH) -L . -l ert -l $(TESTS) -f ert-run-tests-batch-and-exit
