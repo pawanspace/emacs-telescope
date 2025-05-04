@@ -79,7 +79,7 @@
 (defun emacs-telescope--should-exclude-file-p (file)
   "Return non-nil if FILE should be excluded from results."
   (let ((relative-file (file-relative-name file)))
-    (or 
+    (or
      ;; Exclude dot files if configured
      (and emacs-telescope-exclude-dot-files
           (string-match-p "/\\.[^/]+" (concat "/" relative-file)))
@@ -94,18 +94,18 @@
          (input-buffer (get-buffer-create "*telescope-input*"))
          (results-buffer (get-buffer-create "*telescope-results*"))
          (preview-buffer (get-buffer-create "*telescope-preview*")))
-    
+
     ;; Setup buffers
     (setq emacs-telescope--buffer input-buffer)
     (setq emacs-telescope--results-buffer results-buffer)
     (setq emacs-telescope--preview-buffer preview-buffer)
-    
+
     ;; Create windows
     (delete-other-windows)
     (split-window-vertically (- (window-height) height 1))
     (other-window 1)
     (split-window-horizontally)
-    
+
     ;; Set buffers in windows
     (set-window-buffer (selected-window) results-buffer)
     (other-window 1)
@@ -113,7 +113,7 @@
     (other-window -1)
     (split-window-vertically 1)
     (set-window-buffer (selected-window) input-buffer)
-    
+
     ;; Setup input buffer
     (with-current-buffer input-buffer
       (erase-buffer)
@@ -122,11 +122,11 @@
       (local-set-key (kbd "C-p") 'emacs-telescope-prev-item)
       (local-set-key (kbd "RET") 'emacs-telescope-select-item)
       (local-set-key (kbd "C-g") 'emacs-telescope-quit))
-    
+
     ;; Setup results buffer
     (with-current-buffer results-buffer
       (erase-buffer))
-    
+
     ;; Setup preview buffer
     (with-current-buffer preview-buffer
       (erase-buffer))))
@@ -161,7 +161,7 @@
   "Update the preview based on current selection."
   (when emacs-telescope--preview-timer
     (cancel-timer emacs-telescope--preview-timer))
-  
+
   (setq emacs-telescope--preview-timer
         (run-with-timer
          emacs-telescope-preview-delay nil
@@ -177,7 +177,10 @@
                     ;; Grep result preview
                     ((string-match "\\(.*\\):\\([0-9]+\\):" selected)
                      (let ((file (match-string 1 selected))
-                           (line (string-to-number (match-string 2 selected))))
+                           (line (string-to-number (match-string 2 selected)))
+                           (content (if (string-match ":[0-9]+:\\(.*\\)$" selected)
+                                       (match-string 1 selected)
+                                     nil)))
                        (if (file-exists-p file)
                            (progn
                              (insert-file-contents file)
@@ -188,8 +191,22 @@
                              (forward-line (1- line))
                              (let ((start (line-beginning-position))
                                    (end (line-end-position)))
-                               (put-text-property start end 'face 'highlight)))
-                         (insert (format "File not found: %s" file)))))
+                               (put-text-property start end 'face 'highlight)
+                               ;; Add context - show a few lines before and after
+                               (let ((context-start (max (point-min) 
+                                                        (save-excursion 
+                                                          (goto-char start)
+                                                          (forward-line -3)
+                                                          (point))))
+                                     (context-end (min (point-max)
+                                                      (save-excursion
+                                                        (goto-char end)
+                                                        (forward-line 3)
+                                                        (point)))))
+                                 (narrow-to-region context-start context-end))))
+                         (insert (format "File not found: %s\n\n" file))
+                         (when content
+                           (insert (format "Matched content: %s" content))))))
                     
                     ;; File preview
                     ((and (stringp selected) (file-exists-p selected))
