@@ -171,7 +171,8 @@
                      (< emacs-telescope--current-selection (length emacs-telescope--results)))
              (let ((selected (nth emacs-telescope--current-selection emacs-telescope--results)))
                (with-current-buffer emacs-telescope--preview-buffer
-                 (let ((inhibit-read-only t))
+                 (let ((inhibit-read-only t)
+                       (buffer-read-only nil))
                    (erase-buffer)
                    (cond
                     ;; Grep result preview
@@ -181,11 +182,14 @@
                            (content (if (string-match ":[0-9]+:\\(.*\\)$" selected)
                                        (match-string 1 selected)
                                      nil)))
-                       (if (file-exists-p file)
+                       (if (and (file-exists-p file)
+                                (file-readable-p file))
                            (progn
-                             (insert-file-contents file)
+                             (insert-file-contents file nil nil nil t)
                              (let ((mode (assoc-default file auto-mode-alist 'string-match)))
-                               (when mode (funcall mode)))
+                               (when mode 
+                                 (with-demoted-errors "Error setting mode: %S"
+                                   (funcall mode))))
                              ;; Highlight the matching line
                              (goto-char (point-min))
                              (forward-line (1- line))
@@ -203,16 +207,22 @@
                                                         (goto-char end)
                                                         (forward-line 3)
                                                         (point)))))
+                                 ;; Use a temporary narrowing for display purposes
                                  (narrow-to-region context-start context-end))))
-                         (insert (format "File not found: %s\n\n" file))
+                         (insert (format "File not found or not readable: %s\n\n" file))
                          (when content
                            (insert (format "Matched content: %s" content))))))
                     
                     ;; File preview
                     ((and (stringp selected) (file-exists-p selected))
-                     (insert-file-contents selected)
-                     (let ((mode (assoc-default selected auto-mode-alist 'string-match)))
-                       (when mode (funcall mode))))
+                     (if (file-readable-p selected)
+                         (progn
+                           (insert-file-contents selected nil nil nil t)
+                           (let ((mode (assoc-default selected auto-mode-alist 'string-match)))
+                             (when mode 
+                               (with-demoted-errors "Error setting mode: %S"
+                                 (funcall mode)))))
+                       (insert (format "File not readable: %s" selected))))
                     
                     ;; Buffer preview
                     ((and (stringp selected) (get-buffer selected))
@@ -234,9 +244,11 @@
        ((string-match "\\(.*\\):\\([0-9]+\\):" selected)
         (let ((file (match-string 1 selected))
               (line (string-to-number (match-string 2 selected))))
-          (find-file file)
-          (goto-char (point-min))
-          (forward-line (1- line))))
+          (when (file-exists-p file)
+            (find-file file)
+            (goto-char (point-min))
+            (forward-line (1- line))
+            (recenter))))
        
        ;; File selection
        ((and (stringp selected) (file-exists-p selected))
