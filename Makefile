@@ -1,7 +1,7 @@
 EMACS ?= emacs
 BATCH := $(EMACS) -Q --batch
 
-SRCS := emacs-telescope.el src/emacs-telescope-ui.el src/emacs-telescope-sources.el src/emacs-telescope-actions.el
+SRCS := emacs-telescope.el emacs-telescope-grep.el src/emacs-telescope-ui.el src/emacs-telescope-sources.el src/emacs-telescope-actions.el
 TESTS := $(wildcard tests/*.el)
 
 .PHONY: all compile test clean package
