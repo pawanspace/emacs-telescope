@@ -366,7 +366,6 @@
                        ;; Catch errors during preview generation
                        (error (insert (format "Error generating preview for %s:\n%s" selected err)))))))))))))
 
-
 (defun emacs-telescope-select-item ()
   "Select the current item."
   (interactive)
@@ -374,39 +373,60 @@
              (>= emacs-telescope--current-selection 0)
              (< emacs-telescope--current-selection (length emacs-telescope--results)))
     (let ((selected (nth emacs-telescope--current-selection emacs-telescope--results))
-          ;; Get project root for potential use in grep/file cases
           (project-root (project-root (project-current t))))
+      ;; (message "DEBUG select-item: Selected string is: %S" selected) ; Keep commented unless needed
+      ;; (message "DEBUG select-item: Project root is: %S" project-root) ; Keep commented unless needed
       (emacs-telescope-quit) ; Quit UI first
       (cond
        ;; Grep result (file:line:content)
-       ((string-match "\(.+?\):\([0-9]+\):.*" selected) ; Use non-greedy regex matching preview
-        (let* ((relative-file (match-string 1 selected))
-               (line (string-to-number (match-string 2 selected)))
-               ;; Construct absolute path relative to project root
-               (file (expand-file-name relative-file project-root)))
-          (when (file-exists-p file) ; Check existence of absolute path
-            (find-file file)
-            (goto-char (point-min))
-            (forward-line (1- line))
-            (recenter)))) ; Optional: recenter after jumping
+       ;; Test with simple regex first
+       ((string-match ":[0-9]+:" selected)
+        ;; (message "DEBUG select-item: Matched SIMPLE Grep clause.") ; Keep commented unless needed
+        ;; Try parsing using split-string instead of complex regex match
+        (let* ((parts (split-string selected ":" t)) ; Split by colon, omit empty strings
+               (relative-file (when (>= (length parts) 1) (nth 0 parts)))
+               (line-str (when (>= (length parts) 2) (nth 1 parts)))
+               ;; Combine the rest back in case content had colons
+               ;; (content (when (>= (length parts) 3) (mapconcat #'identity (nthcdr 2 parts) ":"))) ; Content not needed for opening
+               (line (when (and line-str (string-match-p "^[0-9]+$" line-str)) ; Validate line is numeric
+                       (string-to-number line-str)))
+               (file (when relative-file ; Only proceed if we got a filename part
+                       (if project-root
+                           (expand-file-name relative-file project-root)
+                         (expand-file-name relative-file default-directory)))))
+          ;; Check if parsing was successful (got file and numeric line)
+          (if (and file line)
+              (progn
+                ;; (message "DEBUG select-item: Parsed via split: file=%s, line=%s" file line) ; Keep commented unless needed
+                (if (file-exists-p file)
+                    (progn
+                      (find-file file)
+                      (goto-char (point-min))
+                      (forward-line (1- line))
+                      (recenter))
+                  (message "Error: File not found after parsing grep result: %s" file)))
+            ;; If parsing failed (e.g., line wasn't numeric), fall through
+            ;; (message "DEBUG select-item: Failed to parse grep result via split. Falling through.") ; Keep commented unless needed
+            ;; Explicitly signal failure to prevent this clause from fully succeeding
+            nil))) ; This makes the cond move to the next clause if parsing fails
 
        ;; File selection (assuming relative path from project root)
-       ((and (stringp selected) project-root ; Ensure project-root is valid
-             (let ((file (expand-file-name selected project-root))) ; Construct absolute path
-               (file-exists-p file))) ; Check existence
-        (find-file (expand-file-name selected project-root))) ; Open absolute path
+       ((and (stringp selected) project-root
+             (let ((file (expand-file-name selected project-root)))
+               (file-exists-p file)))
+        (find-file (expand-file-name selected project-root)))
 
        ;; Buffer selection
        ((and (stringp selected) (get-buffer selected))
         (switch-to-buffer (get-buffer selected)))
 
        ;; Fallback: If it's a string but not matched above, maybe try opening as file?
-       ;; This handles cases where find-files might return absolute paths if not in a project.
        ((and (stringp selected) (file-exists-p selected))
         (find-file selected))
 
        (t (message "Don't know how to open: %s" selected))
        ))))
+
 
 
 (defun emacs-telescope-quit ()
