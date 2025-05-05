@@ -2,6 +2,9 @@
 
 A fuzzy finder with preview capabilities for Emacs, inspired by [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) for Neovim.
 
+![Emacs Telescope Demo](demo.gif)
+
+
 ## Features
 
 - Fuzzy finding for files, buffers, and grep results
