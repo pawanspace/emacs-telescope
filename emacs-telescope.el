@@ -77,6 +77,10 @@
 (defvar emacs-telescope--results nil
   "Current results list.")
 
+(defvar emacs-telescope--current-query nil
+  "The query used for the current telescope session, if applicable.")
+
+
 (defun emacs-telescope--should-exclude-file-p (file)
   "Return non-nil if FILE should be excluded from results."
   (let ((relative-file (file-relative-name file)))
@@ -199,36 +203,47 @@
                          (buffer-read-only nil)) ;; Ensure buffer isn't read-only
                      (erase-buffer) ;; Clear previous preview
                      (condition-case err ; Basic error handling
-                         (cond
+                         (cond                                    
                           ;; Case 1: Grep result preview (format: file:line:content)
                           ((string-match "\\(.+?\\):\\([0-9]+\\):\\(.*\\)" selected) ; Use non-greedy match for file
                            (let* ((relative-file (match-string 1 selected))
-                                  ;; Construct absolute path relative to project root if project-root is valid
                                   (file (if project-root
                                             (expand-file-name relative-file project-root)
-                                          relative-file)) ; Fallback if not in project
+                                          relative-file))
                                   (line (string-to-number (match-string 2 selected)))
-                                  (content (match-string 3 selected))) ; Content is the rest
+                                  (content (match-string 3 selected)))
                              (if (and (file-exists-p file) (file-readable-p file))
                                  (progn
-                                   ;; Insert file contents without markers
                                    (insert-file-contents file nil nil nil t)
-                                   ;; Attempt to set the correct major mode
                                    (let ((mode (or (derived-mode-p 'prog-mode)
                                                    (assoc-default file auto-mode-alist 'string-match))))
                                      (when mode
-                                       (with-demoted-errors "Error setting mode: %S"
-                                         (funcall mode))))
-                                   ;; Go to the target line and highlight it
+                                       (with-demoted-errors "Error setting mode: %S" (funcall mode))))
+                                   ;; Go to the target line
                                    (goto-char (point-min))
                                    (forward-line (1- line))
-                                   (let ((start (line-beginning-position))
-                                         (end (line-end-position)))
-                                     (put-text-property start end 'face emacs-telescope) ; Simple highlight face
-                                     (recenter (/ (window-height) 2)))) ; Center view
+                                   ;; *** MODIFIED HIGHLIGHTING START ***
+                                   (let ((line-start (line-beginning-position))
+                                         (line-end (line-end-position)))
+                                     ;; 1. Apply base highlight to the entire line
+                                     (put-text-property line-start line-end 'face emacs-telescope-ui-selection-face)
+
+                                     ;; 2. If query exists, try to highlight the specific match on top
+                                     (when (and emacs-telescope--current-query
+                                                (not (string-empty-p emacs-telescope--current-query))
+                                                ;; Search within the current line only
+                                                (save-excursion
+                                                  (goto-char line-start)
+                                                  ;; Use regexp-quote for literal search, ignore case (t)
+                                                  (search-forward (regexp-quote emacs-telescope--current-query) line-end t)))
+                                       ;; If found, apply 'match' face specifically to the query text
+                                       (put-text-property (match-beginning 0) (match-end 0) 'face 'match)))
+                                   ;; *** MODIFIED HIGHLIGHTING END ***
+                                   (recenter (/ (window-height) 2))) ; Center view
                                ;; Handle file not found/readable
                                (insert (format "File not found or not readable: %s\n\nMatched content:\n%s"
                                                file content)))))
+
 
                           ;; Case 2: File preview (could be relative or absolute)
                           ((and (stringp selected)
@@ -346,6 +361,7 @@
   (interactive)
   (when emacs-telescope--preview-timer
     (cancel-timer emacs-telescope--preview-timer))
+  (setq emacs-telescope--current-query nil) 
 
   (when (buffer-live-p emacs-telescope--buffer)
     (kill-buffer emacs-telescope--buffer))
@@ -380,20 +396,24 @@
          (default-directory project-root)
          (all-files (directory-files-recursively project-root ".*" nil))
          (files (seq-filter (lambda (f) (not (emacs-telescope--should-exclude-file-p f))) all-files)))
+    (setq emacs-telescope--current-query nil) ; Clear query
     (setq emacs-telescope--results files)
     (setq emacs-telescope--current-selection 0)
     (emacs-telescope--create-ui)
     (emacs-telescope--update-selection)))
+
 
 ;;;###autoload
 (defun emacs-telescope-buffers ()
   "Find buffers using telescope."
   (interactive)
   (let* ((buffers (mapcar #'buffer-name (buffer-list))))
+    (setq emacs-telescope--current-query nil) ; Clear query
     (setq emacs-telescope--results buffers)
     (setq emacs-telescope--current-selection 0)
     (emacs-telescope--create-ui)
     (emacs-telescope--update-selection)))
+
 
 ;;;###autoload
 ;; Grep functionality is now in emacs-telescope-grep.el

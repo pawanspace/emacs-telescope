@@ -42,12 +42,14 @@ Returns a list of strings, each formatted as 'filename:lineno:match'."
       (let ((results (emacs-telescope-grep-get-results query)))
         (if (null results)
             (message "No results found for \"%s\"" query)
-          ;; Assuming these are the functions/variables used by your UI
+          ;; Store the query before launching UI
+          (setq emacs-telescope--current-query query)
           (setq emacs-telescope--results results)
           (setq emacs-telescope--current-selection 0)
-          (emacs-telescope--create-ui) ; Or however your UI is launched
-          (emacs-telescope--update-selection) ; Update display/preview
+          (emacs-telescope--create-ui)
+          (emacs-telescope--update-selection)
           )))))
+
 
 (provide 'emacs-telescope-grep)
 ;;; emacs-telescope-grep.el ends here
