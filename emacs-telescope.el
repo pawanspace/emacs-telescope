@@ -1,13 +1,5 @@
 ;;; emacs-telescope.el --- Fuzzy finder with preview capabilities -*- lexical-binding: t -*-
 
-;; Copyright (C) 2025 Your Name
-
-;; Author: Your Name <your.email@example.com>
-;; Version: 0.1.0
-;; Package-Requires: ((emacs "27.1"))
-;; Keywords: convenience, files, matching
-;; URL: https://github.com/yourusername/emacs-telescope
-
 ;;; Commentary:
 
 ;; This package provides a fuzzy finder with preview capabilities for Emacs,
@@ -133,60 +125,95 @@
 (defvar emacs-telescope--filter-timer nil
   "Timer for debouncing filter updates.")
 
+
 (defun emacs-telescope--create-ui ()
   "Create the telescope UI."
   (let* ((height emacs-telescope-height)
          (input-buffer (get-buffer-create "*telescope-input*"))
          (results-buffer (get-buffer-create "*telescope-results*"))
-         (preview-buffer (get-buffer-create "*telescope-preview*")))
+         (preview-buffer (get-buffer-create "*telescope-preview*"))
+         ;; Define border characters and face
+         (border-char-h ?─) ; Horizontal line character (Box Drawings Light Horizontal)
+         (border-face emacs-telescope-ui-border-face)) ; Use the face defined in ui.el
 
-    ;; Setup buffers
+    ;; Setup global buffer variables
     (setq emacs-telescope--buffer input-buffer)
     (setq emacs-telescope--results-buffer results-buffer)
     (setq emacs-telescope--preview-buffer preview-buffer)
 
-    ;; Create windows
+    ;; --- Create window layout ---
     (delete-other-windows)
-    (split-window-vertically (- (window-height) height 1))
-    (other-window 1)
-    (split-window-horizontally)
+    (when (< height (frame-height))
+        (split-window-vertically (- (window-height) height 1)))
+    (other-window 1) ; Move to the bottom (telescope) window
+    (split-window-horizontally) ; Default 50/50 split
 
-    ;; Set buffers in windows
-    (set-window-buffer (selected-window) results-buffer)
-    (other-window 1)
-    (set-window-buffer (selected-window) preview-buffer)
-    (other-window -1)
-    (split-window-vertically 1)
-    (set-window-buffer (selected-window) input-buffer)
+    ;; Assign results and preview buffers AND define window vars for later use
+    (let* ((results-window (selected-window))
+           (preview-window (next-window))
+           ;; Define input-window here, initially nil
+           (input-window nil))
+      (set-window-buffer results-window results-buffer)
+      (set-window-buffer preview-window preview-buffer)
 
-    ;; Setup input buffer
-    (with-current-buffer input-buffer
-      (erase-buffer)
-      ;; Use the prompt from the UI module
-      (insert emacs-telescope-ui-prompt)
-      (goto-char (point-max)) ; Move cursor to end after prompt
-      (local-set-key (kbd "C-n") 'emacs-telescope-next-item)
-      (local-set-key (kbd "C-p") 'emacs-telescope-prev-item)
-      (local-set-key (kbd "RET") 'emacs-telescope-select-item)
-      (local-set-key (kbd "C-g") 'emacs-telescope-quit)
-      ;; Add the filter function to the hook
-      ;;(add-hook 'after-change-functions #'emacs-telescope--filter-on-input-change nil t) ; t makes it buffer-local
-      ;; *** ADD THIS DEBUG MESSAGE ***
-      (message "DEBUG: Filter hook added to buffer: %s" (buffer-name)))
+      ;; Split results window vertically for input buffer (1 line high)
+      (select-window results-window)
+      (split-window-vertically 1)
+      ;; Now set the input-window variable defined in the outer let
+      (setq input-window (selected-window))
+      (set-window-buffer input-window input-buffer)
 
-    ;; Setup results buffer
-    (with-current-buffer results-buffer
-      (erase-buffer))
+      ;; --- Setup Input Buffer ---
+      (with-selected-window input-window
+        (with-current-buffer input-buffer
+          (erase-buffer)
+          ;; Add Header Line (Top Border for Input)
+          (let ((width (max 1 (window-body-width))))
+            (setq header-line-format
+                  (propertize (make-string width border-char-h) 'face border-face)))
+          ;; Insert Prompt
+          (insert emacs-telescope-ui-prompt)
+          (goto-char (point-max))
+          ;; Set Keymap
+          (local-set-key (kbd "C-n") 'emacs-telescope-next-item)
+          (local-set-key (kbd "C-p") 'emacs-telescope-prev-item)
+          (local-set-key (kbd "RET") 'emacs-telescope-select-item)
+          (local-set-key (kbd "C-g") 'emacs-telescope-quit)
+          ))
 
-    ;; Setup preview buffer
-    (with-current-buffer preview-buffer
-      (erase-buffer)))
-      
-    (setq emacs-telescope--last-input-tick -1)
-    (setq emacs-telescope--last-input-length -1)
-    (add-hook 'post-command-hook #'emacs-telescope--check-input-change-via-post-command))
-      
-      
+      ;; --- Setup Results Buffer ---
+      (select-window (next-window results-window)) ; Select the window below input
+      (with-selected-window (selected-window) ; Now this is the results window
+          (with-current-buffer results-buffer
+            (erase-buffer)
+            ;; Add Header Line (Top Border for Results)
+            (let ((width (max 1 (window-body-width))))
+              (setq header-line-format
+                    (propertize (make-string width border-char-h) 'face border-face)))
+            (setq buffer-read-only t)))
+
+      ;; --- Setup Preview Buffer ---
+      (select-window preview-window)
+      (with-selected-window preview-window
+          (with-current-buffer preview-buffer
+            (erase-buffer)
+            ;; Optional: Add header line to preview too for consistency
+            (let ((width (max 1 (window-body-width))))
+              (setq header-line-format
+                    (propertize (make-string width border-char-h) 'face border-face)))
+            (setq buffer-read-only t)))
+
+      ;; --- Final Setup ---
+      ;; Reset input state tracking and add post-command-hook
+      (setq emacs-telescope--last-input-tick -1)
+      (setq emacs-telescope--last-input-length -1)
+      (add-hook 'post-command-hook #'emacs-telescope--check-input-change-via-post-command)
+
+      ;; Select the input window initially for typing
+      ;; Now input-window is accessible here
+      (select-window input-window))))
+
+
 
 (defun emacs-telescope-next-item ()
   "Select next item in telescope."

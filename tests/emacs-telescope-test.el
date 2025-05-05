@@ -1,6 +1,5 @@
 ;;; emacs-telescope-test.el --- Tests for emacs-telescope -*- lexical-binding: t -*-
 
-;; Copyright (C) 2025 Your Name
 
 ;;; Commentary:
 

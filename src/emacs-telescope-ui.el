@@ -1,11 +1,5 @@
 ;;; emacs-telescope-ui.el --- UI components for emacs-telescope -*- lexical-binding: t -*-
 
-;; Copyright (C) 2025 Your Name
-
-;; Author: Your Name <your.email@example.com>
-;; Keywords: convenience, files, matching
-;; URL: https://github.com/yourusername/emacs-telescope
-
 ;;; Commentary:
 
 ;; This file provides UI components for emacs-telescope.

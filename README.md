@@ -25,16 +25,6 @@ A fuzzy finder with preview capabilities for Emacs, inspired by [telescope.nvim]
    (require 'emacs-telescope)
    ```
 
-### With use-package
-
-```elisp
-(use-package emacs-telescope
-  :straight (emacs-telescope :type git :host github :repo "yourusername/emacs-telescope")
-  :bind (("C-c f f" . emacs-telescope-find-files)
-         ("C-c f b" . emacs-telescope-buffers)
-         ("C-c f g" . emacs-telescope-grep)))
-```
-
 ## Usage
 
 - `M-x emacs-telescope-find-files` - Find files in the current project
@@ -62,14 +52,6 @@ A fuzzy finder with preview capabilities for Emacs, inspired by [telescope.nvim]
 - Emacs 27.1 or later
 - popup.el
 - dash.el
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgments
 
@@ -148,11 +130,3 @@ The project is organized into several modules with clear separation of concerns:
    - Supports various data sources (files, buffers, commands)
    - Integrates with project.el for project-aware searching
 
-### Data Flow
-
-1. User invokes a telescope command (find-files, buffers, grep)
-2. Core module creates the UI using the UI module
-3. Core module gets data from the appropriate source
-4. User filters results by typing in the input buffer
-5. Core module updates the selection and preview
-6. When user selects an item, the appropriate action is executed
