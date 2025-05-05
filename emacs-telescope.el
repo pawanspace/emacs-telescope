@@ -80,6 +80,9 @@
 (defvar emacs-telescope--current-query nil
   "The query used for the current telescope session, if applicable.")
 
+(defvar emacs-telescope--original-results nil
+  "The original, unfiltered results list for the current session.")
+
 
 (defun emacs-telescope--should-exclude-file-p (file)
   "Return non-nil if FILE should be excluded from results."
@@ -92,6 +95,43 @@
      (seq-some (lambda (pattern)
                  (string-match-p pattern relative-file))
                emacs-telescope-exclude-patterns))))
+
+
+
+(defun emacs-telescope--filter-on-input-change (_beg _end _len)
+  "Filter results based on input buffer changes. Hook function."
+  ;; Prevent recursive calls and calls during programmatic changes
+  (unless inhibit-modification-hooks
+     (message "Filter hook triggered...") ; Uncomment for debugging
+    (let ((query "") ;; Default to empty query
+          (prompt-found-p nil))
+      ;; Safely find the end of the prompt
+      (save-excursion
+        (goto-char (point-min))
+        (when (search-forward emacs-telescope-ui-prompt nil t) ; Search non-destructively
+          (setq query (buffer-substring-no-properties (point) (point-max)))
+          (setq prompt-found-p t)))
+
+      ;; Only filter if the prompt was found (sanity check)
+      (if prompt-found-p
+          (progn
+            ;; (message "Filtering with query: %s" query) ; Uncomment for debugging
+            (let ((filtered (emacs-telescope--filter-results query emacs-telescope--original-results)))
+              ;; Update the displayed results
+              (setq emacs-telescope--results filtered)
+              ;; Reset selection to the top
+              (setq emacs-telescope--current-selection 0)
+              ;; Update the results buffer display and preview via timer
+              (when emacs-telescope--filter-timer (cancel-timer emacs-telescope--filter-timer))
+              (setq emacs-telescope--filter-timer
+                    (run-with-timer 0.05 nil #'emacs-telescope--update-selection))))
+         (message "Prompt not found in input buffer!") ; Uncomment for debugging
+        ))))
+
+
+;; Add a timer variable for debouncing filter updates
+(defvar emacs-telescope--filter-timer nil
+  "Timer for debouncing filter updates.")
 
 (defun emacs-telescope--create-ui ()
   "Create the telescope UI."
@@ -122,11 +162,17 @@
     ;; Setup input buffer
     (with-current-buffer input-buffer
       (erase-buffer)
-      (insert "Type to search...")
+      ;; Use the prompt from the UI module
+      (insert emacs-telescope-ui-prompt)
+      (goto-char (point-max)) ; Move cursor to end after prompt
       (local-set-key (kbd "C-n") 'emacs-telescope-next-item)
       (local-set-key (kbd "C-p") 'emacs-telescope-prev-item)
       (local-set-key (kbd "RET") 'emacs-telescope-select-item)
-      (local-set-key (kbd "C-g") 'emacs-telescope-quit))
+      (local-set-key (kbd "C-g") 'emacs-telescope-quit)
+      ;; Add the filter function to the hook
+      ;;(add-hook 'after-change-functions #'emacs-telescope--filter-on-input-change nil t) ; t makes it buffer-local
+      ;; *** ADD THIS DEBUG MESSAGE ***
+      (message "DEBUG: Filter hook added to buffer: %s" (buffer-name)))
 
     ;; Setup results buffer
     (with-current-buffer results-buffer
@@ -134,7 +180,13 @@
 
     ;; Setup preview buffer
     (with-current-buffer preview-buffer
-      (erase-buffer))))
+      (erase-buffer)))
+      
+    (setq emacs-telescope--last-input-tick -1)
+    (setq emacs-telescope--last-input-length -1)
+    (add-hook 'post-command-hook #'emacs-telescope--check-input-change-via-post-command))
+      
+      
 
 (defun emacs-telescope-next-item ()
   "Select next item in telescope."
@@ -329,39 +381,19 @@
        (t (message "Don't know how to open: %s" selected))
        ))))
 
-(defun emacs-telescope-select-item ()
-  "Select the current item."
-  (interactive)
-  (when (and emacs-telescope--results
-             (>= emacs-telescope--current-selection 0)
-             (< emacs-telescope--current-selection (length emacs-telescope--results)))
-    (let ((selected (nth emacs-telescope--current-selection emacs-telescope--results)))
-      (emacs-telescope-quit)
-      (cond
-       ;; Grep result
-       ((string-match "\\(.*\\):\\([0-9]+\\):" selected)
-        (let ((file (match-string 1 selected))
-              (line (string-to-number (match-string 2 selected))))
-          (when (file-exists-p file)
-            (find-file file)
-            (goto-char (point-min))
-            (forward-line (1- line))
-            (recenter))))
-
-       ;; File selection
-       ((and (stringp selected) (file-exists-p selected))
-        (find-file selected))
-
-       ;; Buffer selection
-       ((and (stringp selected) (get-buffer selected))
-        (switch-to-buffer (get-buffer selected)))))))
 
 (defun emacs-telescope-quit ()
   "Quit telescope."
   (interactive)
   (when emacs-telescope--preview-timer
     (cancel-timer emacs-telescope--preview-timer))
-  (setq emacs-telescope--current-query nil) 
+  (when emacs-telescope--filter-timer ; <-- Add this line
+    (cancel-timer emacs-telescope--filter-timer)) ; <-- Add this line
+  (setq emacs-telescope--current-query nil)
+
+;; Remove the post-command-hook function
+  (remove-hook 'post-command-hook #'emacs-telescope--check-input-change-via-post-command)
+
 
   (when (buffer-live-p emacs-telescope--buffer)
     (kill-buffer emacs-telescope--buffer))
@@ -396,23 +428,63 @@
          (default-directory project-root)
          (all-files (directory-files-recursively project-root ".*" nil))
          (files (seq-filter (lambda (f) (not (emacs-telescope--should-exclude-file-p f))) all-files)))
-    (setq emacs-telescope--current-query nil) ; Clear query
-    (setq emacs-telescope--results files)
+    (setq emacs-telescope--current-query nil) ; Clear grep query
+    (setq emacs-telescope--original-results files) ; Store original
+    (setq emacs-telescope--results files)         ; Set initial display results
     (setq emacs-telescope--current-selection 0)
     (emacs-telescope--create-ui)
     (emacs-telescope--update-selection)))
-
 
 ;;;###autoload
 (defun emacs-telescope-buffers ()
   "Find buffers using telescope."
   (interactive)
   (let* ((buffers (mapcar #'buffer-name (buffer-list))))
-    (setq emacs-telescope--current-query nil) ; Clear query
-    (setq emacs-telescope--results buffers)
+    (setq emacs-telescope--current-query nil) ; Clear grep query
+    (setq emacs-telescope--original-results buffers) ; Store original
+    (setq emacs-telescope--results buffers)         ; Set initial display results
     (setq emacs-telescope--current-selection 0)
     (emacs-telescope--create-ui)
     (emacs-telescope--update-selection)))
+
+
+(defvar emacs-telescope--last-input-tick -1 ; Initialize to -1
+  "Buffer modification tick of the input buffer from the last check.")
+(defvar emacs-telescope--last-input-length -1 ; Initialize to -1
+  "Buffer length of the input buffer from the last check.")
+
+(defun emacs-telescope--check-input-change-via-post-command ()
+  "Check if telescope input changed and trigger filtering. Runs via post-command-hook."
+  ;; Only run if the telescope input buffer is live and is the current buffer
+  (when (and emacs-telescope--buffer ; Check if UI is active
+             (buffer-live-p emacs-telescope--buffer)
+             (eq (current-buffer) emacs-telescope--buffer))
+    ;; Check if buffer content actually changed since last time
+    (let ((current-tick (buffer-modified-tick emacs-telescope--buffer))
+          (current-length (buffer-size emacs-telescope--buffer)))
+      (unless (and (= current-tick emacs-telescope--last-input-tick)
+                   (= current-length emacs-telescope--last-input-length))
+        ;; Content changed! Update last known state
+        (setq emacs-telescope--last-input-tick current-tick)
+        (setq emacs-telescope--last-input-length current-length)
+
+        ;; Now, run the filtering logic (similar to the original hook)
+        (message "DEBUG: Input change detected via post-command-hook") ; Debug message
+        (let ((query "")
+              (prompt-found-p nil))
+          (save-excursion
+            (goto-char (point-min))
+            (when (search-forward emacs-telescope-ui-prompt nil t)
+              (setq query (buffer-substring-no-properties (point) (point-max)))
+              (setq prompt-found-p t)))
+          (when prompt-found-p
+            (let ((filtered (emacs-telescope--filter-results query emacs-telescope--original-results)))
+              (setq emacs-telescope--results filtered)
+              (setq emacs-telescope--current-selection 0)
+              (when emacs-telescope--filter-timer (cancel-timer emacs-telescope--filter-timer))
+              (setq emacs-telescope--filter-timer
+                    (run-with-timer 0.05 nil #'emacs-telescope--update-selection)))))))))
+
 
 
 ;;;###autoload

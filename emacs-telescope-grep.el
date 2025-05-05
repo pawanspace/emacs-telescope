@@ -32,6 +32,7 @@ Returns a list of strings, each formatted as 'filename:lineno:match'."
     ;; Split the output into lines, removing any empty lines
     (string-split raw-output "\n" t)))
 
+;; In emacs-telescope-grep.el
 ;;;###autoload
 (defun emacs-telescope-grep ()
   "Grep in project using telescope."
@@ -44,12 +45,12 @@ Returns a list of strings, each formatted as 'filename:lineno:match'."
             (message "No results found for \"%s\"" query)
           ;; Store the query before launching UI
           (setq emacs-telescope--current-query query)
-          (setq emacs-telescope--results results)
+          (setq emacs-telescope--original-results results) ; Store original
+          (setq emacs-telescope--results results)         ; Set initial display results
           (setq emacs-telescope--current-selection 0)
           (emacs-telescope--create-ui)
           (emacs-telescope--update-selection)
           )))))
-
 
 (provide 'emacs-telescope-grep)
 ;;; emacs-telescope-grep.el ends here
