@@ -17,6 +17,9 @@
 (require 'emacs-telescope-grep)
 (require 'emacs-telescope-ui)
 
+;; Declare functions from emacs-telescope-grep
+(declare-function emacs-telescope-grep-get-results "emacs-telescope-grep")
+
 (defgroup emacs-telescope nil
   "Fuzzy finder with preview capabilities for Emacs."
   :group 'convenience
@@ -56,6 +59,9 @@
 
 (defvar emacs-telescope--preview-buffer nil
   "Buffer used for telescope preview.")
+
+(defvar emacs-telescope--preview-window nil
+  "Window used for telescope preview.")
 
 (defvar emacs-telescope--current-source nil
   "Current source for telescope.")
@@ -129,9 +135,22 @@
 (defun emacs-telescope--create-ui ()
   "Create the telescope UI."
   (let* ((height emacs-telescope-height)
-         (input-buffer (get-buffer-create "*telescope-input*"))
-         (results-buffer (get-buffer-create "*telescope-results*"))
-         (preview-buffer (get-buffer-create "*telescope-preview*"))
+         (input-buffer-name "*telescope-input*")
+         (results-buffer-name "*telescope-results*")
+         (preview-buffer-name "*telescope-preview*")
+         ;; Kill old buffers if they exist
+         (input-buffer (progn
+                         (when (get-buffer input-buffer-name)
+                           (kill-buffer input-buffer-name))
+                         (get-buffer-create input-buffer-name)))
+         (results-buffer (progn
+                           (when (get-buffer results-buffer-name)
+                             (kill-buffer results-buffer-name))
+                           (get-buffer-create results-buffer-name)))
+         (preview-buffer (progn
+                           (when (get-buffer preview-buffer-name)
+                             (kill-buffer preview-buffer-name))
+                           (get-buffer-create preview-buffer-name)))
          ;; Define border characters and face
          (border-char-h ?─) ; Horizontal line character (Box Drawings Light Horizontal)
          (border-face emacs-telescope-ui-border-face)) ; Use the face defined in ui.el
@@ -155,6 +174,9 @@
            (input-window nil))
       (set-window-buffer results-window results-buffer)
       (set-window-buffer preview-window preview-buffer)
+      
+      ;; Store preview window reference globally
+      (setq emacs-telescope--preview-window preview-window)
 
       ;; Split results window vertically for input buffer (1 line high)
       (select-window results-window)
@@ -175,14 +197,17 @@
           (insert emacs-telescope-ui-prompt)
           (goto-char (point-max))
           ;; Set Keymap
-          (local-set-key (kbd "C-n") 'emacs-telescope-next-item)
-          (local-set-key (kbd "C-p") 'emacs-telescope-prev-item)
-          (local-set-key (kbd "RET") 'emacs-telescope-select-item)
-          (local-set-key (kbd "C-g") 'emacs-telescope-quit)
-          ))
+          (let ((map (make-sparse-keymap)))
+            (set-keymap-parent map minibuffer-local-map)
+            (define-key map (kbd "<down>") 'emacs-telescope-next-item)
+            (define-key map (kbd "<up>") 'emacs-telescope-prev-item)
+            (define-key map (kbd "RET") 'emacs-telescope-select-item)
+            (define-key map (kbd "C-g") 'emacs-telescope-quit)
+            (use-local-map map))
+        ))
 
       ;; --- Setup Results Buffer ---
-      (select-window (next-window results-window)) ; Select the window below input
+      (select-window (next-window results-window))
       (with-selected-window (selected-window) ; Now this is the results window
           (with-current-buffer results-buffer
             (erase-buffer)
@@ -210,8 +235,8 @@
       (add-hook 'post-command-hook #'emacs-telescope--check-input-change-via-post-command)
 
       ;; Select the input window initially for typing
-      ;; Now input-window is accessible here
       (select-window input-window))))
+
 
 
 
@@ -240,13 +265,29 @@
         (if (null emacs-telescope--results)
             (insert "No results available.")
           (dotimes (i (length emacs-telescope--results))
-            (let ((item (nth i emacs-telescope--results)))
+            (let* ((item (nth i emacs-telescope--results))
+                   (start-pos (point)))
               (if (= i emacs-telescope--current-selection)
                   ;; Use the face defined in the UI module
                   (insert (propertize (format "> %s\n" item) 'face emacs-telescope-ui-selection-face))
-                (insert (format "  %s\n" item))))))
+                (insert (format "  %s\n" item)))
+              ;; Highlight search query in the result line
+              (when (and emacs-telescope--current-query
+                         (not (string-empty-p emacs-telescope--current-query)))
+                (save-excursion
+                  (goto-char start-pos)
+                  (let ((line-end (line-end-position)))
+                    (while (search-forward emacs-telescope--current-query line-end t)
+                      (put-text-property (match-beginning 0) (match-end 0) 'face 'match))))))))
         ;; Make buffer read-only again after modification
-        (setq buffer-read-only t)))
+        (setq buffer-read-only t))
+      
+      ;; Position point at the selected line and ensure it's visible
+      (goto-char (point-min))
+      (forward-line emacs-telescope--current-selection)
+      (let ((results-window (get-buffer-window emacs-telescope--results-buffer)))
+        (when (window-live-p results-window)
+          (set-window-point results-window (point)))))
 
     ;; Trigger preview update *after* results buffer is updated
     ;; Check if selection is valid before getting item
@@ -303,22 +344,27 @@
                                    (forward-line (1- line))
                                    ;; *** MODIFIED HIGHLIGHTING START ***
                                    (let ((line-start (line-beginning-position))
-                                         (line-end (line-end-position)))
+                                         (line-end (line-end-position))
+                                         (target-point (point)))
                                      ;; 1. Apply base highlight to the entire line
                                      (put-text-property line-start line-end 'face emacs-telescope-ui-selection-face)
 
                                      ;; 2. If query exists, try to highlight the specific match on top
                                      (when (and emacs-telescope--current-query
-                                                (not (string-empty-p emacs-telescope--current-query))
-                                                ;; Search within the current line only
-                                                (save-excursion
-                                                  (goto-char line-start)
-                                                  ;; Use regexp-quote for literal search, ignore case (t)
-                                                  (search-forward (regexp-quote emacs-telescope--current-query) line-end t)))
-                                       ;; If found, apply 'match' face specifically to the query text
-                                       (put-text-property (match-beginning 0) (match-end 0) 'face 'match)))
-                                   ;; *** MODIFIED HIGHLIGHTING END ***
-                                   (recenter (/ (window-height) 2))) ; Center view
+                                                (not (string-empty-p emacs-telescope--current-query)))
+                                       ;; Search within the current line only (case-insensitive)
+                                       (let ((case-fold-search t))
+                                         (save-excursion
+                                           (goto-char line-start)
+                                           (while (search-forward emacs-telescope--current-query line-end t)
+                                             ;; Apply 'match' face to each occurrence
+                                             (put-text-property (match-beginning 0) (match-end 0) 'face 'match)))))
+                                     ;; *** MODIFIED HIGHLIGHTING END ***
+                                     (when (window-live-p emacs-telescope--preview-window)
+                                       (with-selected-window emacs-telescope--preview-window
+                                         (with-current-buffer emacs-telescope--preview-buffer
+                                           (goto-char target-point)
+                                           (recenter (/ (window-height) 2))))))) ; Center view
                                ;; Handle file not found/readable
                                (insert (format "File not found or not readable: %s\n\nMatched content:\n%s"
                                                file content)))))
@@ -344,7 +390,11 @@
                                        (with-demoted-errors "Error setting mode: %S"
                                          (funcall mode))))
                                    (goto-char (point-min)) ; Go to start of file
-                                   (recenter 0)) ; Show top of file
+                                   (when (window-live-p emacs-telescope--preview-window)
+                                     (with-selected-window emacs-telescope--preview-window
+                                       (with-current-buffer emacs-telescope--preview-buffer
+                                         (goto-char (point-min))
+                                         (recenter 0))))) ; Show top of file
                                (insert (format "File not readable: %s" file)))))
 
                           ;; Case 3: Buffer preview
@@ -359,7 +409,11 @@
                                    (with-demoted-errors "Error setting mode: %S"
                                      (funcall major-mode))))))
                            (goto-char (point-min))
-                           (recenter 0))
+                           (when (window-live-p emacs-telescope--preview-window)
+                             (with-selected-window emacs-telescope--preview-window
+                               (with-current-buffer emacs-telescope--preview-buffer
+                                 (goto-char (point-min))
+                                 (recenter 0)))))
 
                           ;; Default Case: No preview available
                           (t (insert (format "No preview available for: %s" selected))))
@@ -515,8 +569,7 @@
         (setq emacs-telescope--last-input-tick current-tick)
         (setq emacs-telescope--last-input-length current-length)
 
-        ;; Now, run the filtering logic (similar to the original hook)
-        (message "DEBUG: Input change detected via post-command-hook") ; Debug message
+        ;; Extract query from input buffer
         (let ((query "")
               (prompt-found-p nil))
           (save-excursion
@@ -525,13 +578,39 @@
               (setq query (buffer-substring-no-properties (point) (point-max)))
               (setq prompt-found-p t)))
           (when prompt-found-p
-            (let ((filtered (emacs-telescope--filter-results query emacs-telescope--original-results)))
-              (setq emacs-telescope--results filtered)
-              (setq emacs-telescope--current-selection 0)
-              (when emacs-telescope--filter-timer (cancel-timer emacs-telescope--filter-timer))
+            ;; Store current query
+            (setq emacs-telescope--current-query query)
+            
+            ;; Handle based on source type
+            (cond
+             ;; Live grep mode - run grep on each input change
+             ((eq emacs-telescope--current-source 'grep)
+              (when emacs-telescope--filter-timer 
+                (cancel-timer emacs-telescope--filter-timer))
               (setq emacs-telescope--filter-timer
-                    (run-with-timer 0.05 nil #'emacs-telescope--update-selection)))))))))
-
+                    (run-with-timer 0.3 nil 
+                                    (lambda ()
+                                      (if (string-empty-p query)
+                                          (progn
+                                            (setq emacs-telescope--results nil)
+                                            (setq emacs-telescope--original-results nil)
+                                            (setq emacs-telescope--current-selection 0)
+                                            (emacs-telescope--update-selection))
+                                        (let ((results (emacs-telescope-grep-get-results query)))
+                                          (setq emacs-telescope--original-results results)
+                                          (setq emacs-telescope--results results)
+                                          (setq emacs-telescope--current-selection 0)
+                                          (emacs-telescope--update-selection)))))))
+             
+             ;; Normal file/buffer mode - filter from original results
+             (t
+              (let ((filtered (emacs-telescope--filter-results query emacs-telescope--original-results)))
+                (setq emacs-telescope--results filtered)
+                (setq emacs-telescope--current-selection 0)
+                (when emacs-telescope--filter-timer 
+                  (cancel-timer emacs-telescope--filter-timer))
+                (setq emacs-telescope--filter-timer
+                      (run-with-timer 0.05 nil #'emacs-telescope--update-selection)))))))))))
 
 
 ;;;###autoload

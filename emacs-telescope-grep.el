@@ -35,22 +35,16 @@ Returns a list of strings, each formatted as 'filename:lineno:match'."
 ;; In emacs-telescope-grep.el
 ;;;###autoload
 (defun emacs-telescope-grep ()
-  "Grep in project using telescope."
+  "Grep in project using telescope with live filtering."
   (interactive)
-  (let ((query (read-string "Grep for: ")))
-    (if (string-empty-p query)
-        (message "Grep query cannot be empty.")
-      (let ((results (emacs-telescope-grep-get-results query)))
-        (if (null results)
-            (message "No results found for \"%s\"" query)
-          ;; Store the query before launching UI
-          (setq emacs-telescope--current-query query)
-          (setq emacs-telescope--original-results results) ; Store original
-          (setq emacs-telescope--results results)         ; Set initial display results
-          (setq emacs-telescope--current-selection 0)
-          (emacs-telescope--create-ui)
-          (emacs-telescope--update-selection)
-          )))))
+  ;; Set up for live grep mode
+  (setq emacs-telescope--current-source 'grep)
+  (setq emacs-telescope--current-query "")
+  (setq emacs-telescope--results nil)
+  (setq emacs-telescope--original-results nil)
+  (setq emacs-telescope--current-selection 0)
+  (emacs-telescope--create-ui)
+  (emacs-telescope--update-selection))
 
 (provide 'emacs-telescope-grep)
 ;;; emacs-telescope-grep.el ends here
