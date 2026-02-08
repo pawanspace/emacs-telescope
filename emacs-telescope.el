@@ -81,6 +81,24 @@
 (defvar emacs-telescope--original-results nil
   "The original, unfiltered results list for the current session.")
 
+;; Preview helpers
+(defun emacs-telescope--apply-preview-mode (&optional file mode)
+  "Apply a major MODE (or infer from FILE) and enable font-lock."
+  (when mode
+    (with-demoted-errors "Error setting mode: %S"
+      (funcall mode)))
+  (when file
+    (setq-local buffer-file-name file)
+    (setq-local buffer-file-truename (file-truename file))
+    (if (fboundp 'delay-mode-hooks)
+        (delay-mode-hooks
+          (with-demoted-errors "Error setting auto mode: %S"
+            (set-auto-mode)))
+      (with-demoted-errors "Error setting auto mode: %S"
+        (set-auto-mode))))
+  (when (fboundp 'font-lock-ensure)
+    (font-lock-ensure)))
+
 
 (defun emacs-telescope--should-exclude-file-p (file)
   "Return non-nil if FILE should be excluded from results."
@@ -325,7 +343,7 @@
                      (condition-case err ; Basic error handling
                          (cond                                    
                           ;; Case 1: Grep result preview (format: file:line:content)
-                          ((string-match "\\(.+?\\):\\([0-9]+\\):\\(.*\\)" selected) ; Use non-greedy match for file
+                         ((string-match "\\(.+?\\):\\([0-9]+\\):\\(.*\\)" selected) ; Use non-greedy match for file
                            (let* ((relative-file (match-string 1 selected))
                                   (file (if project-root
                                             (expand-file-name relative-file project-root)
@@ -335,10 +353,7 @@
                              (if (and (file-exists-p file) (file-readable-p file))
                                  (progn
                                    (insert-file-contents file nil nil nil t)
-                                   (let ((mode (or (derived-mode-p 'prog-mode)
-                                                   (assoc-default file auto-mode-alist 'string-match))))
-                                     (when mode
-                                       (with-demoted-errors "Error setting mode: %S" (funcall mode))))
+                                   (emacs-telescope--apply-preview-mode file)
                                    ;; Go to the target line
                                    (goto-char (point-min))
                                    (forward-line (1- line))
@@ -383,12 +398,7 @@
                              (if (file-readable-p file)
                                  (progn
                                    (insert-file-contents file nil nil nil t)
-                                   ;; Attempt to set the correct major mode
-                                   (let ((mode (or (derived-mode-p 'prog-mode)
-                                                   (assoc-default file auto-mode-alist 'string-match))))
-                                     (when mode
-                                       (with-demoted-errors "Error setting mode: %S"
-                                         (funcall mode))))
+                                   (emacs-telescope--apply-preview-mode file)
                                    (goto-char (point-min)) ; Go to start of file
                                    (when (window-live-p emacs-telescope--preview-window)
                                      (with-selected-window emacs-telescope--preview-window
@@ -400,14 +410,11 @@
                           ;; Case 3: Buffer preview
                           ((and (stringp selected) (get-buffer selected))
                            (let ((buffer (get-buffer selected)))
-                             (with-current-buffer buffer
-                               ;; Insert buffer content into preview
-                               (insert-buffer-substring buffer)
-                               ;; Try to set the mode based on the original buffer's mode
-                               (when major-mode
-                                 (with-current-buffer emacs-telescope--preview-buffer
-                                   (with-demoted-errors "Error setting mode: %S"
-                                     (funcall major-mode))))))
+                             ;; Insert buffer content into preview
+                             (insert-buffer-substring buffer)
+                             ;; Try to set the mode based on the original buffer's mode
+                             (let ((mode (buffer-local-value 'major-mode buffer)))
+                               (emacs-telescope--apply-preview-mode nil mode))))
                            (goto-char (point-min))
                            (when (window-live-p emacs-telescope--preview-window)
                              (with-selected-window emacs-telescope--preview-window
@@ -418,7 +425,7 @@
                           ;; Default Case: No preview available
                           (t (insert (format "No preview available for: %s" selected))))
                        ;; Catch errors during preview generation
-                       (error (insert (format "Error generating preview for %s:\n%s" selected err)))))))))))))
+                       (error (insert (format "Error generating preview for %s:\n%s" selected err))))))))))))
 
 (defun emacs-telescope-select-item ()
   "Select the current item."
