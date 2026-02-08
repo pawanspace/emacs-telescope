@@ -7,11 +7,13 @@ A fuzzy finder with preview capabilities for Emacs, inspired by [telescope.nvim]
 
 ## Features
 
-- Fuzzy finding for files, buffers, and grep results
-- Live preview of selected items
-- Project-aware searching
-- Customizable UI
-- Modular architecture for easy extension
+- **Live grep filtering** - Type and see grep results update in real-time
+- **Search highlighting** - Query terms highlighted in both results and preview
+- **Fuzzy finding** - Find files, buffers, and grep results with fuzzy matching
+- **Live preview** - See file contents and matched lines as you navigate
+- **Project-aware** - Automatically searches within your current project
+- **Customizable UI** - Adjust height, width, and preview delay
+- **Modular architecture** - Easy to extend with new sources and actions
 
 ## Installation
 
@@ -32,14 +34,25 @@ A fuzzy finder with preview capabilities for Emacs, inspired by [telescope.nvim]
 
 - `M-x emacs-telescope-find-files` - Find files in the current project
 - `M-x emacs-telescope-buffers` - Find and switch to open buffers
-- `M-x emacs-telescope-grep` - Search for text in project files
+- `M-x emacs-telescope-grep` - Live grep search with real-time results
 
 ### Key Bindings (within Telescope)
 
-- `C-n` - Move to next item
-- `C-p` - Move to previous item
+- `<up>` / `<down>` - Navigate through items
+- `C-n` / `C-p` - Alternative navigation (may not work in all contexts)
 - `RET` - Select current item
 - `C-g` - Quit telescope
+
+### Live Grep
+
+The grep command now supports live filtering:
+1. Run `M-x emacs-telescope-grep`
+2. Start typing your search query
+3. Results update in real-time as you type
+4. Navigate with arrow keys to preview matches
+5. Press Enter to jump to the selected match
+
+Search terms are highlighted in both the results list and preview pane.
 
 ## Customization
 
